@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Cleaning App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+        }
+        .left-panel, .right-panel {
+            flex: 1;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            font-family: monospace;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px 0;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .control-group {
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #eee;
+            border-radius: 5px;
+        }
+        .stats {
+            font-size: 0.9em;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Data Cleaning Application</h1>
+    
+    <div class="container">
+        <div class="left-panel">
+            <h2>Input Data</h2>
+            <div>
+                <label for="dataInput">Paste your CSV data:</label>
+                <textarea id="dataInput" placeholder="Paste CSV data here..."></textarea>
+            </div>
+            
+            <div class="control-group">
+                <h3>Data Cleaning Options</h3>
+                
+                <div>
+                    <button id="parseBtn">Parse CSV Data</button>
+                    <span class="stats" id="parseStats"></span>
+                </div>
+                
+                <div>
+                    <label for="fillNa">Fill NA/Empty Values:</label>
+                    <input type="text" id="fillNa" placeholder="Value to fill (or leave blank to remove)">
+                    <button id="fillNaBtn">Apply</button>
+                </div>
+                
+                <div>
+                    <label for="removeCols">Columns to Remove (comma separated):</label>
+                    <input type="text" id="removeCols" placeholder="column1,column2">
+                    <button id="removeColsBtn">Remove Columns</button>
+                </div>
+                
+                <div>
+                    <label for="removeDupes">Remove Duplicate Rows:</label>
+                    <button id="removeDupesBtn">Remove Duplicates</button>
+                    <span class="stats" id="dupeStats"></span>
+                </div>
+                
+                <div>
+                    <label for="convertType">Convert Column Type:</label>
+                    <select id="convertCol">
+                        <option value="">Select column</option>
+                    </select>
+                    <select id="convertType">
+                        <option value="string">String</option>
+                        <option value="number">Number</option>
+                        <option value="date">Date</option>
+                        <option value="boolean">Boolean</option>
+                    </select>
+                    <button id="convertTypeBtn">Convert</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="right-panel">
+            <h2>Cleaned Data</h2>
+            <div id="dataPreview"></div>
+            <div>
+                <button id="downloadBtn">Download Cleaned Data (CSV)</button>
+            </div>
+            
+            <div class="control-group">
+                <h3>Data Statistics</h3>
+                <div id="dataStats"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variable to hold our data
+        let currentData = [];
+        let headers = [];
+        
+        // DOM elements
+        const dataInput = document.getElementById('dataInput');
+        const dataPreview = document.getElementById('dataPreview');
+        const parseBtn = document.getElementById('parseBtn');
+        const fillNaBtn = document.getElementById('fillNaBtn');
+        const removeColsBtn = document.getElementById('removeColsBtn');
+        const removeDupesBtn = document.getElementById('removeDupesBtn');
+        const convertTypeBtn = document.getElementById('convertTypeBtn');
+        const convertCol = document.getElementById('convertCol');
+        const convertType = document.getElementById('convertType');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const parseStats = document.getElementById('parseStats');
+        const dupeStats = document.getElementById('dupeStats');
+        const dataStats = document.getElementById('dataStats');
+        
+        // Parse CSV data
+        parseBtn.addEventListener('click', () => {
+            const csvData = dataInput.value.trim();
+            if (!csvData) {
+                alert('Please enter some CSV data first');
+                return;
+            }
+            
+            try {
+                // Simple CSV parser (doesn't handle quoted fields with commas)
+                const lines = csvData.split('\n');
+                headers = lines[0].split(',').map(h => h.trim());
+                currentData = [];
+                
+                for (let i = 1; i < lines.length; i++) {
+                    const values = lines[i].split(',');
+                    if (values.length !== headers.length) continue; // Skip malformed rows
+                    
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = values[index].trim();
+                    });
+                    currentData.push(row);
+                }
+                
+                parseStats.textContent = `Parsed ${currentData.length} rows with ${headers.length} columns`;
+                updateColumnDropdown();
+                renderDataPreview();
+                showDataStats();
+            } catch (error) {
+                alert('Error parsing CSV: ' + error.message);
+            }
+        });
+        
+        // Fill NA/empty values
+        fillNaBtn.addEventListener('click', () => {
+            if (!currentData.length) {
+                alert('Please parse data first');
+                return;
+            }
+            
+            const fillValue = document.getElementById('fillNa').value;
+            
+            currentData = currentData.map(row => {
+                const newRow = {};
+                for (const key in row) {
+                    newRow[key] = (row[key] === '' || row[key] === 'NA' || row[key] === 'null') ? fillValue : row[key];
+                }
+                return newRow;
+            });
+            
+            renderDataPreview();
+            showDataStats();
+        });
+        
+        // Remove columns
+        removeColsBtn.addEventListener('click', () => {
+            if (!currentData.length) {
+                alert('Please parse data first');
+                return;
+            }
+            
+            const colsToRemove = document.getElementById('removeCols').value
+                .split(',')
+                .map(col => col.trim())
+                .filter(col => col);
+            
+            if (colsToRemove.length === 0) {
+                alert('Please specify columns to remove');
+                return;
+            }
+            
+            // Filter out columns that don't exist
+            const validCols = colsToRemove.filter(col => headers.includes(col));
+            
+            if (validCols.length === 0) {
+                alert('None of the specified columns exist in the data');
+                return;
+            }
+            
+            // Remove columns
+            headers = headers.filter(header => !validCols.includes(header));
+            currentData = currentData.map(row => {
+                const newRow = {};
+                headers.forEach(header => {
+                    newRow[header] = row[header];
+                });
+                return newRow;
+            });
+            
+            updateColumnDropdown();
+            renderDataPreview();
+            showDataStats();
+        });
+        
+        // Remove duplicate rows
+        removeDupesBtn.addEventListener('click', () => {
+            if (!currentData.length) {
+                alert('Please parse data first');
+                return;
+            }
+            
+            const originalCount = currentData.length;
+            const uniqueRows = new Set();
+            
+            currentData = currentData.filter(row => {
+                const rowString = JSON.stringify(row);
+                if (uniqueRows.has(rowString)) {
+                    return false;
+                }
+                uniqueRows.add(rowString);
+                return true;
+            });
+            
+            const removedCount = originalCount - currentData.length;
+            dupeStats.textContent = `Removed ${removedCount} duplicate rows`;
+            renderDataPreview();
+            showDataStats();
+        });
+        
+        // Convert column types
+        convertTypeBtn.addEventListener('click', () => {
+            if (!currentData.length) {
+                alert('Please parse data first');
+                return;
+            }
+            
+            const column = convertCol.value;
+            const type = convertType.value;
+            
+            if (!column) {
+                alert('Please select a column');
+                return;
+            }
+            
+            try {
+                currentData = currentData.map(row => {
+                    const newRow = {...row};
+                    const value = newRow[column];
+                    
+                    switch (type) {
+                        case 'number':
+                            newRow[column] = isNaN(parseFloat(value)) ? null : parseFloat(value);
+                            break;
+                        case 'date':
+                            const date = new Date(value);
+                            newRow[column] = isNaN(date.getTime()) ? null : date.toISOString().split('T')[0];
+                            break;
+                        case 'boolean':
+                            newRow[column] = String(value).toLowerCase() === 'true' || 
+                                            String(value).toLowerCase() === 'yes' ||
+                                            String(value) === '1';
+                            break;
+                        default: // string
+                            newRow[column] = String(value);
+                    }
+                    
+                    return newRow;
+                });
+                
+                renderDataPreview();
+                showDataStats();
+            } catch (error) {
+                alert('Error converting column: ' + error.message);
+            }
+        });
+        
+        // Download cleaned data
+        downloadBtn.addEventListener('click', () => {
+            if (!currentData.length) {
+                alert('No data to download');
+                return;
+            }
+            
+            // Convert to CSV
+            let csvContent = headers.join(',') + '\n';
+            
+            currentData.forEach(row => {
+                const rowValues = headers.map(header => {
+                    let value = row[header];
+                    // Handle values that might contain commas
+                    if (String(value).includes(',')) {
+                        return `"${value}"`;
+                    }
+                    return value;
+                });
+                csvContent += rowValues.join(',') + '\n';
+            });
+            
+            // Create download link
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'cleaned_data.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+        
+        // Helper function to render data preview
+        function renderDataPreview() {
+            if (!currentData.length) {
+                dataPreview.innerHTML = '<p>No data to display</p>';
+                return;
+            }
+            
+            let html = '<table><thead><tr>';
+            
+            // Headers
+            headers.forEach(header => {
+                html += `<th>${header}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            
+            // First 20 rows
+            const displayRows = currentData.slice(0, 20);
+            displayRows.forEach(row => {
+                html += '<tr>';
+                headers.forEach(header => {
+                    html += `<td>${row[header]}</td>`;
+                });
+                html += '</tr>';
+            });
+            
+            if (currentData.length > 20) {
+                html += `<tr><td colspan="${headers.length}">... and ${currentData.length - 20} more rows</td></tr>`;
+            }
+            
+            html += '</tbody></table>';
+            dataPreview.innerHTML = html;
+        }
+        
+        // Helper function to update column dropdown
+        function updateColumnDropdown() {
+            convertCol.innerHTML = '<option value="">Select column</option>';
+            headers.forEach(header => {
+                const option = document.createElement('option');
+                option.value = header;
+                option.textContent = header;
+                convertCol.appendChild(option);
+            });
+        }
+        
+        // Helper function to show data statistics
+        function showDataStats() {
+            if (!currentData.length) {
+                dataStats.innerHTML = '<p>No data to analyze</p>';
+                return;
+            }
+            
+            let html = '<table>';
+            html += '<tr><th>Column</th><th>Type</th><th>Non-empty</th><th>Unique</th></tr>';
+            
+            headers.forEach(header => {
+                // Collect values for this column
+                const values = currentData.map(row => row[header]);
+                
+                // Count non-empty
+                const nonEmpty = values.filter(v => v !== '' && v !== null && v !== undefined).length;
+                
+                // Count unique
+                const unique = new Set(values).size;
+                
+                // Detect type
+                let type = 'string';
+                if (values.some(v => !isNaN(parseFloat(v)) && values.every(v => v === '' || !isNaN(parseFloat(v)))) {
+                    type = 'number';
+                } else if (values.some(v => {
+                    try {
+                        return new Date(v).toString() !== 'Invalid Date';
+                    } catch {
+                        return false;
+                    }
+                })) {
+                    type = 'date';
+                }
+                
+                html += `<tr>
+                    <td>${header}</td>
+                    <td>${type}</td>
+                    <td>${nonEmpty} (${Math.round((nonEmpty / currentData.length) * 100)}%)</td>
+                    <td>${unique}</td>
+                </tr>`;
+            });
+            
+            html += '</table>';
+            dataStats.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
